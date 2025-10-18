@@ -24,8 +24,7 @@ import discord
 from discord import Intents
 from dotenv import load_dotenv
 
-from keep_alive import keep_alive
-keep_alive()
+
 
 
 # ---------------- Constants ----------------
@@ -362,4 +361,9 @@ async def on_message(msg: discord.Message):
         return
 
 if __name__ == "__main__":
+    log.info("🚀 Starting keep-alive web server...")
+    from keep_alive import keep_alive
+    keep_alive()
+
+    log.info("🤖 Starting Discord bot...")
     bot.run(DISCORD_TOKEN)
