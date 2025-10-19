@@ -19,7 +19,7 @@ OPENAI_MODEL = "gpt-4o-mini"
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("autotrader-discord")
 
-# ---------------- Prompt for AutoTrader Mapping ----------------
+# ---------------- Prompt ----------------
 SYSTEM_PROMPT = """
 You convert UK car auction titles into AutoTrader search parameters.
 Return ONLY compact JSON, no commentary.
@@ -101,7 +101,7 @@ def format_cost(data: dict) -> str:
         f"🧾 **Total Cost: £{data['total']:.2f}**"
     )
 
-# ---------------- OpenAI Mapping (Bulletproof JSON Extraction) ----------------
+# ---------------- OpenAI Mapping (Failsafe JSON Extraction) ----------------
 def ai_map_title_to_params(openai_key: str, title: str) -> dict:
     headers = {"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"}
     payload = {
@@ -110,26 +110,26 @@ def ai_map_title_to_params(openai_key: str, title: str) -> dict:
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": USER_PROMPT_TEMPLATE.format(title=title)},
-        ],
-        "response_format": {"type": "json_object"},
+        ]
     }
 
     resp = requests.post(OPENAI_URL, headers=headers, json=payload, timeout=60)
     resp.raise_for_status()
     content = resp.json()["choices"][0]["message"]["content"]
 
-    # --- Extract JSON safely ---
-    match = re.search(r"\{.*\}", content, flags=re.S)
-    if not match:
+    # --- Extract only the JSON between first { and last } ---
+    start = content.find("{")
+    end = content.rfind("}") + 1
+    if start == -1 or end == 0:
         raise ValueError(f"Could not locate JSON in model output:\n{content}")
-    raw_json = match.group(0).strip()
+
+    raw_json = content[start:end].strip()
 
     try:
         data = json.loads(raw_json)
     except Exception as e:
         raise ValueError(f"Failed to parse JSON: {e}\n---RAW OUTPUT---\n{content}")
 
-    # --- Validate and fix ---
     for key in ("year-from", "make", "model"):
         if key not in data:
             raise ValueError(f"Missing key '{key}'. Got: {data}")
@@ -186,11 +186,11 @@ async def on_message(msg: discord.Message):
         help_text = (
             f"{msg.author.mention}\n"
             f"📘 **AutoTrader & Flip Bot Commands**\n\n"
-            f"🚗 **!car <title>** – Start AutoTrader search. The bot will ask for mileage next.\n"
-            f"💰 **!cost <buy_price> <distance>** – Calculates full car cost including fees, VAT, fuel & extras.\n"
+            f"🚗 **!car <title>** – Start AutoTrader search. Bot will ask for mileage next.\n"
+            f"💰 **!cost <buy_price> <distance>** – Calculate total cost including fees, VAT, fuel & extras.\n"
             f"📊 **!compare <distance> <price1> <price2> ...** – Compare total costs for different buy prices.\n"
-            f"💸 **!sell <sell_price>** – Calculates profit, ROI & result based on your last cost.\n"
-            f"🧹 **!reset** – Clears current car title conversation.\n"
+            f"💸 **!sell <sell_price>** – Calculate profit, ROI & result based on your last cost.\n"
+            f"🧹 **!reset** – Clears current AutoTrader session.\n"
             f"❓ **!help** – Shows this help message.\n"
         )
         await msg.channel.send(help_text)
