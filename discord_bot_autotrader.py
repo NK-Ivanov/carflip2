@@ -27,13 +27,13 @@ Return ONLY compact JSON, no commentary.
 USER_PROMPT_TEMPLATE = """Title: {title}
 
 Return JSON like:
-{
+{{
   "year-from": 2020, "year-to": 2020,
   "make": "BMW", "model": "3 Series",
   "aggregatedTrim": "320i", "trim": "M Sport",
   "fuel-type": "Petrol", "transmission": "Automatic",
   "body-type": "Saloon", "quantity-of-doors": 4
-}"""
+}}"""
 
 # ---------------- Helpers ----------------
 def to_ascii(s: str) -> str:
