@@ -68,12 +68,24 @@ def calculate_total(price: float, distance: float) -> dict:
     processing = 90
     admin = 40
     variable = get_variable_fee(price)
+
+    # base fees and VAT
     fees = processing + admin + variable
     vat = fees * 0.2
     fees_with_vat = fees + vat
+
+    # fuel cost (distance * 3 trips * cost per litre at 40mpg)
     fuel = (distance * 3 / 40) * 1.39 * 4.546
-    extras = 50 + 50 + 30
+
+    # other fixed costs (not included in VAT)
+    tow_fee = 50
+    autotrader_ad = 50
+    insurance_tax = 30
+    extras = tow_fee + autotrader_ad + insurance_tax
+
+    # final total
     total = price + fees_with_vat + fuel + extras
+
     return {
         "price": price,
         "processing": processing,
@@ -84,6 +96,7 @@ def calculate_total(price: float, distance: float) -> dict:
         "extras": extras,
         "total": total,
     }
+
 
 def format_cost(data: dict) -> str:
     return (
