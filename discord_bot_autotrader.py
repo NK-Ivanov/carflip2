@@ -143,7 +143,7 @@ intents.message_content = True
 bot = discord.Client(intents=intents)
 
 STATE = {}
-LAST_COST = {}
+LAST_COST = {}  # user_id: {"total": ..., "buy_price": ...}
 
 async def prompt_mileage(channel, user):
     await channel.send(f"{user.mention} Got the title. Now send the **Mileage** (e.g., 50k or 50000).")
@@ -168,7 +168,7 @@ async def on_message(msg: discord.Message):
             price = float(price)
             distance = float(distance)
             data = calculate_total(price, distance)
-            LAST_COST[msg.author.id] = data["total"]
+            LAST_COST[msg.author.id] = {"total": data["total"], "buy_price": price}
             await msg.channel.send(format_cost(data))
         except Exception:
             await msg.channel.send("Usage: `!cost <price> <distance>`")
@@ -182,15 +182,21 @@ async def on_message(msg: discord.Message):
             if msg.author.id not in LAST_COST:
                 await msg.channel.send("❌ Please run `!cost` first to calculate your total cost.")
                 return
-            total_cost = LAST_COST[msg.author.id]
+
+            total_cost = LAST_COST[msg.author.id]["total"]
+            buy_price = LAST_COST[msg.author.id]["buy_price"]
             profit = sell_price - total_cost
             roi = (profit / total_cost) * 100
             emoji = "🟢" if profit >= 0 else "🔴"
             status = "Profit" if profit >= 0 else "Loss"
+
             await msg.channel.send(
-                f"💰 **Sell Price:** £{sell_price:.2f}\n"
-                f"🧾 **Total Cost:** £{total_cost:.2f}\n"
-                f"{emoji} **{status}: £{profit:.2f} ({roi:.2f}% ROI)**"
+                f"{msg.author.mention}\n"
+                f"💸 **Car Flip Summary**\n\n"
+                f"🔹 Auction Buy Price: £{buy_price:.2f}\n"
+                f"🔹 Total Cost (Fees + Fuel + Extras): £{total_cost:.2f}\n"
+                f"🔹 Sell Price: £{sell_price:.2f}\n"
+                f"\n{emoji} **{status}: £{profit:.2f} ({roi:.2f}% ROI)**"
             )
         except Exception:
             await msg.channel.send("Usage: `!sell <selling_price>`")
