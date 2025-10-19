@@ -22,7 +22,6 @@ log = logging.getLogger("autotrader-discord")
 # ---------------- Prompt tuned for AutoTrader ----------------
 SYSTEM_PROMPT = """
 You convert UK car auction titles into AutoTrader search parameters.
-
 Return ONLY compact JSON, no commentary.
 """
 USER_PROMPT_TEMPLATE = """Title: {title}
@@ -68,24 +67,15 @@ def calculate_total(price: float, distance: float) -> dict:
     processing = 90
     admin = 40
     variable = get_variable_fee(price)
-
-    # base fees and VAT
     fees = processing + admin + variable
     vat = fees * 0.2
     fees_with_vat = fees + vat
-
-    # fuel cost (distance * 3 trips * cost per litre at 40mpg)
     fuel = (distance * 3 / 40) * 1.39 * 4.546
-
-    # other fixed costs (not included in VAT)
     tow_fee = 50
     autotrader_ad = 50
     insurance_tax = 30
     extras = tow_fee + autotrader_ad + insurance_tax
-
-    # final total
     total = price + fees_with_vat + fuel + extras
-
     return {
         "price": price,
         "processing": processing,
@@ -96,7 +86,6 @@ def calculate_total(price: float, distance: float) -> dict:
         "extras": extras,
         "total": total,
     }
-
 
 def format_cost(data: dict) -> str:
     return (
@@ -152,7 +141,9 @@ if not DISCORD_TOKEN or not OPENAI_API_KEY:
 intents = Intents.default()
 intents.message_content = True
 bot = discord.Client(intents=intents)
+
 STATE = {}
+LAST_COST = {}
 
 async def prompt_mileage(channel, user):
     await channel.send(f"{user.mention} Got the title. Now send the **Mileage** (e.g., 50k or 50000).")
@@ -177,9 +168,32 @@ async def on_message(msg: discord.Message):
             price = float(price)
             distance = float(distance)
             data = calculate_total(price, distance)
+            LAST_COST[msg.author.id] = data["total"]
             await msg.channel.send(format_cost(data))
         except Exception:
             await msg.channel.send("Usage: `!cost <price> <distance>`")
+        return
+
+    # --- !sell ---
+    if content.lower().startswith("!sell"):
+        try:
+            _, sell_price = parts
+            sell_price = float(sell_price)
+            if msg.author.id not in LAST_COST:
+                await msg.channel.send("❌ Please run `!cost` first to calculate your total cost.")
+                return
+            total_cost = LAST_COST[msg.author.id]
+            profit = sell_price - total_cost
+            roi = (profit / total_cost) * 100
+            emoji = "🟢" if profit >= 0 else "🔴"
+            status = "Profit" if profit >= 0 else "Loss"
+            await msg.channel.send(
+                f"💰 **Sell Price:** £{sell_price:.2f}\n"
+                f"🧾 **Total Cost:** £{total_cost:.2f}\n"
+                f"{emoji} **{status}: £{profit:.2f} ({roi:.2f}% ROI)**"
+            )
+        except Exception:
+            await msg.channel.send("Usage: `!sell <selling_price>`")
         return
 
     # --- !compare ---
@@ -210,7 +224,7 @@ async def on_message(msg: discord.Message):
         await prompt_mileage(msg.channel, msg.author)
         return
 
-    if content.lower() in {"!reset", "/reset"}:
+    if content.lower() in {"!reset"}:
         STATE.pop(key, None)
         await msg.channel.send(f"{msg.author.mention} Reset. Send a title with `!car <TITLE>`.")
         return
@@ -219,6 +233,7 @@ async def on_message(msg: discord.Message):
     if not st:
         return
 
+    # --- awaiting mileage ---
     if st.get("stage") == "await_mileage":
         miles = normalize_mileage(content)
         if miles is None:
