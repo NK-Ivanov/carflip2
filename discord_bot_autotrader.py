@@ -107,7 +107,7 @@ def format_cost(data: dict) -> str:
         f"🔹 Auction Fee: £{data['variable']:.2f}\n"
         f"🔹 VAT (20%): £{data['vat']:.2f}\n"
         f"🔹 Fuel (x3 trip): £{data['fuel']:.2f}\n"
-        f"🔹 Extras: £{data['extras']:.2f}\n"
+        f"🔹 Extras (Tow + Ad + Insurance): £{data['extras']:.2f}\n"
         f"\n---------------------------------\n"
         f"🧾 **Total Cost: £{data['total']:.2f}**"
     )
