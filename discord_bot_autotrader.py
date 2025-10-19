@@ -19,7 +19,7 @@ OPENAI_MODEL = "gpt-4o-mini"
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("autotrader-discord")
 
-# ---------------- Prompt tuned for AutoTrader ----------------
+# ---------------- Prompt for AutoTrader Mapping ----------------
 SYSTEM_PROMPT = """
 You convert UK car auction titles into AutoTrader search parameters.
 Return ONLY compact JSON, no commentary.
@@ -101,7 +101,7 @@ def format_cost(data: dict) -> str:
         f"🧾 **Total Cost: £{data['total']:.2f}**"
     )
 
-# ---------------- AutoTrader AI Mapping (Fixed JSON Parser) ----------------
+# ---------------- OpenAI Mapping (Bulletproof JSON Extraction) ----------------
 def ai_map_title_to_params(openai_key: str, title: str) -> dict:
     headers = {"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"}
     payload = {
@@ -111,32 +111,30 @@ def ai_map_title_to_params(openai_key: str, title: str) -> dict:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": USER_PROMPT_TEMPLATE.format(title=title)},
         ],
-        "response_format": {"type": "json_object"}
+        "response_format": {"type": "json_object"},
     }
 
     resp = requests.post(OPENAI_URL, headers=headers, json=payload, timeout=60)
     resp.raise_for_status()
     content = resp.json()["choices"][0]["message"]["content"]
 
-    # --- Clean GPT output ---
-    content = content.strip()
-    if content.startswith("```"):
-        content = re.sub(r"^```(?:json)?", "", content, flags=re.IGNORECASE).strip()
-        content = re.sub(r"```$", "", content).strip()
-    if not content.startswith("{"):
-        content = "{" + content.split("{", 1)[-1]
-    if not content.endswith("}"):
-        content = content.rsplit("}", 1)[0] + "}"
+    # --- Extract JSON safely ---
+    match = re.search(r"\{.*\}", content, flags=re.S)
+    if not match:
+        raise ValueError(f"Could not locate JSON in model output:\n{content}")
+    raw_json = match.group(0).strip()
 
     try:
-        data = json.loads(content)
+        data = json.loads(raw_json)
     except Exception as e:
         raise ValueError(f"Failed to parse JSON: {e}\n---RAW OUTPUT---\n{content}")
 
-    if "year-from" not in data:
-        raise ValueError(f"Missing 'year-from'. Got: {data}")
-    if "make" not in data or "model" not in data:
-        raise ValueError(f"Incomplete mapping. Got: {data}")
+    # --- Validate and fix ---
+    for key in ("year-from", "make", "model"):
+        if key not in data:
+            raise ValueError(f"Missing key '{key}'. Got: {data}")
+    if "year-to" not in data:
+        data["year-to"] = data["year-from"]
 
     return data
 
@@ -182,6 +180,21 @@ async def on_message(msg: discord.Message):
     content = (msg.content or "").strip()
     parts = content.split()
     key = (msg.channel.id, msg.author.id)
+
+    # --- !help ---
+    if content.lower().startswith("!help"):
+        help_text = (
+            f"{msg.author.mention}\n"
+            f"📘 **AutoTrader & Flip Bot Commands**\n\n"
+            f"🚗 **!car <title>** – Start AutoTrader search. The bot will ask for mileage next.\n"
+            f"💰 **!cost <buy_price> <distance>** – Calculates full car cost including fees, VAT, fuel & extras.\n"
+            f"📊 **!compare <distance> <price1> <price2> ...** – Compare total costs for different buy prices.\n"
+            f"💸 **!sell <sell_price>** – Calculates profit, ROI & result based on your last cost.\n"
+            f"🧹 **!reset** – Clears current car title conversation.\n"
+            f"❓ **!help** – Shows this help message.\n"
+        )
+        await msg.channel.send(help_text)
+        return
 
     # --- !cost ---
     if content.lower().startswith("!cost"):
@@ -252,6 +265,7 @@ async def on_message(msg: discord.Message):
         await prompt_mileage(msg.channel, msg.author)
         return
 
+    # --- !reset ---
     if content.lower() in {"!reset"}:
         STATE.pop(key, None)
         await msg.channel.send(f"{msg.author.mention} Reset. Send a title with `!car <TITLE>`.")
