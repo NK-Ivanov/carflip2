@@ -101,7 +101,7 @@ def format_cost(data: dict) -> str:
         f"🧾 **Total Cost: £{data['total']:.2f}**"
     )
 
-# ---------------- AutoTrader AI Mapping ----------------
+# ---------------- AutoTrader AI Mapping (Fixed JSON Parser) ----------------
 def ai_map_title_to_params(openai_key: str, title: str) -> dict:
     headers = {"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"}
     payload = {
@@ -111,11 +111,33 @@ def ai_map_title_to_params(openai_key: str, title: str) -> dict:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": USER_PROMPT_TEMPLATE.format(title=title)},
         ],
-        "response_format": {"type": "json_object"},
+        "response_format": {"type": "json_object"}
     }
+
     resp = requests.post(OPENAI_URL, headers=headers, json=payload, timeout=60)
     resp.raise_for_status()
-    data = json.loads(resp.json()["choices"][0]["message"]["content"])
+    content = resp.json()["choices"][0]["message"]["content"]
+
+    # --- Clean GPT output ---
+    content = content.strip()
+    if content.startswith("```"):
+        content = re.sub(r"^```(?:json)?", "", content, flags=re.IGNORECASE).strip()
+        content = re.sub(r"```$", "", content).strip()
+    if not content.startswith("{"):
+        content = "{" + content.split("{", 1)[-1]
+    if not content.endswith("}"):
+        content = content.rsplit("}", 1)[0] + "}"
+
+    try:
+        data = json.loads(content)
+    except Exception as e:
+        raise ValueError(f"Failed to parse JSON: {e}\n---RAW OUTPUT---\n{content}")
+
+    if "year-from" not in data:
+        raise ValueError(f"Missing 'year-from'. Got: {data}")
+    if "make" not in data or "model" not in data:
+        raise ValueError(f"Incomplete mapping. Got: {data}")
+
     return data
 
 def build_autotrader_url(params_ai: dict, mileage: int) -> str:
@@ -143,7 +165,7 @@ intents.message_content = True
 bot = discord.Client(intents=intents)
 
 STATE = {}
-LAST_COST = {}  # user_id: {"total": ..., "buy_price": ...}
+LAST_COST = {}
 
 async def prompt_mileage(channel, user):
     await channel.send(f"{user.mention} Got the title. Now send the **Mileage** (e.g., 50k or 50000).")
@@ -196,7 +218,7 @@ async def on_message(msg: discord.Message):
                 f"🔹 Auction Buy Price: £{buy_price:.2f}\n"
                 f"🔹 Total Cost (Fees + Fuel + Extras): £{total_cost:.2f}\n"
                 f"🔹 Sell Price: £{sell_price:.2f}\n"
-                f"\n{emoji} **{status}: £{profit:.2f} ({roi:.2f}% ROI)**"
+                f"\n{emoji} **{status}: £{profit:.2f} ({roi:.1f}% ROI)**"
             )
         except Exception:
             await msg.channel.send("Usage: `!sell <selling_price>`")
